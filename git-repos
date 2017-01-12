@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-#
-# TODO put stuff here
-#
-#set -x
+# Git repository management plugin
+# Copyright (c) 2017 Joe Baldwin <joe@joebaldwin.com>
+# MIT License
+
+
+declare -i GITREPOS_MAXDEPTH=${GITREPOS_MAXDEPTH:-1}
+declare PROGNAME=$(basename $0)
 
 
 # Show message then die with exit_code
@@ -22,17 +25,20 @@ help()
   echo
   echo "Iterate over a number of git repositories, optionally running COMMAND"
   echo "in each one. If no COMMAND is specified, the found repositories are"
-  echo "listed. Repositories are defined as directories that contain a"
-  echo "directory named \".git\"; the current directory, or each directory in"
-  echo "GITREPOS_PATH, are searched for matches."
+  echo "listed. The current directory, or each directory in GITREPOS_PATH, are"
+  echo "searched for repositories. If the first character of COMMAND is \"/\""
+  echo "or \".\", then only that absolute or relative path are searched for"
+  echo "repositories."
   echo
   echo "OPTIONS"
   echo "  -h|--help           deisplay this message then exit"
   echo "  -l|--long           display full pathname rather than short repo name"
-  echo "  -n|--name PATTERN   filter repo names by shell glob PATTERN"
+  echo "  -n|--name PATTERN   filter names by the shell glob PATTERN"
+  echo "  --max-depth INTEGER the maximum depth to search (default: 1)"
   echo
-  echo "BUILTIN COMMANDS"
-  echo "  ls|list             list found repositories (the default action)"
+  echo "ENVIRONMENT VARIABLES"
+  echo "  GITREPOS_PATH       colon separated list of directories to search"
+  echo "  GITREPOS_MAXDEPTH   maximum depth to search for repositories"
   exit
 }
 
@@ -42,13 +48,26 @@ repos()
 {
   local path
   local paths=${GITREPOS_PATH//:/ }
+  local maxdepth=$(( 1 + ${GITREPOS_MAXDEPTH} ))
 
   [[ ${paths} ]] || paths=${PWD}
 
   for path in ${paths}
   do
-    find ${path} -mindepth 2 -maxdepth 2 -type d -name .git | sed -e 's#/\.git$##'
+    find ${path} -mindepth 2 -maxdepth ${maxdepth} -type d -name .git | sed -e 's#/\.git$##'
   done
+}
+
+
+# Filter repository name by string or glob pattern
+filter()
+{
+  local name=$(basename $1)
+
+  # Tranform "foo" to "*foo*" unless it already looks like a glob
+  [[ ! $(tr -Cd '*?[]' <<< ${GITREPOS_FILTER}) ]] && GITREPOS_FILTER="*${GITREPOS_FILTER}*"
+
+  [[ ${name} == ${GITREPOS_FILTER} ]]
 }
 
 
@@ -57,7 +76,7 @@ list()
 {
   for repo in $(repos)
   do
-    [[ ${FILTER} && $(basename ${repo}) != ${FILTER} ]] && continue
+    filter ${repo} || continue
     [[ ${LONG} ]] && echo ${repo} || echo $(basename ${repo})
   done
 }
@@ -77,13 +96,18 @@ do
       ;;
 
     -n|--name)
-      FILTER=$2
+      GITREPOS_FILTER=$2
       shift 2
       ;;
 
-    ls|list)
-      list
-      exit
+    --max-depth)
+      GITREPOS_MAXDEPTH=$2
+      shift 2
+      ;;
+
+    --)
+      shift
+      break
       ;;
 
     *)
@@ -93,13 +117,16 @@ do
 done
 
 
+[[ ${1:0:1} = . || ${1:0:1} = / ]] && GITREPOS_PATH=$1 && shift
+
+
 if [[ $1 ]]
 then
   for repo in $(repos)
   do
-    [[ ${FILTER} && $(basename ${repo}) != ${FILTER} ]] && continue
+    filter ${repo} || continue
     echo
-    echo ===== ${repo}: git "$@" =====
+    echo ===== \<${repo}\> git "$@" =====
     cd ${repo}
     git "$@"
     exit_code=$?
