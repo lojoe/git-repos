@@ -62,7 +62,7 @@ repos()
 # Filter repository name by string or glob pattern
 filter()
 {
-  local name=$(basename $1)
+  local name=$1
 
   # Tranform "foo" to "*foo*" unless it already looks like a glob
   [[ ! $(tr -Cd '*?[]' <<< ${GITREPOS_FILTER}) ]] && GITREPOS_FILTER="*${GITREPOS_FILTER}*"
@@ -74,10 +74,28 @@ filter()
 # Show a list of found repositories
 list()
 {
+  local fmt="%3s %3s %3s %s\n"
+
+  [[ ${LONG} ]] && printf "${fmt}" "NEW" "MOD" "UNT" "REPOSITORY/BRANCH -> UPSTREAM"
+
   for repo in $(repos)
   do
-    filter ${repo} || continue
-    [[ ${LONG} ]] && echo ${repo} || echo $(basename ${repo})
+    cd ${repo}
+    local name=$(basename ${repo})
+    filter ${name} || continue
+    if [[ ${LONG} ]]
+    then
+      local branch=$(git rev-parse --abbrev-ref HEAD)
+      local upstream=$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null)
+      local text=$(git status --porcelain)
+      local -i new=$(git status --porcelain | grep "^.M" | wc -l)
+      local -i modified=$(git status --porcelain | grep "^.N" | wc -l)
+      local -i untracked=$(git status --porcelain | grep "^.?" | wc -l)
+      [[ ${upstream} ]] && upstream=" -> ${upstream}"
+      printf "${fmt}" ${new} ${modified} ${untracked} "${name}/${branch}${upstream}"
+    else
+      printf "%s\n" ${name}
+    fi
   done
 }
 
