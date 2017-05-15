@@ -146,7 +146,7 @@ then
     echo
     echo ===== \<${repo}\> git "$@" =====
     cd ${repo}
-    git "$@"
+    "$@"
     exit_code=$?
     [[ ${exit_code} -eq 0 ]] || die -${exit_code} "Aborting due to git error."
   done
